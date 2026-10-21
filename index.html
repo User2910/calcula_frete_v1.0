@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full bg-slate-900 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CalculaFrete - Custo por KM Rodado & Simulador de Margem</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js para visualização do gráfico de custos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- html2pdf para exportação de relatório -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- Fonte Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0f7ff',
+                            100: '#e0effe',
+                            500: '#0284c7',
+                            600: '#0369a1',
+                            700: '#035485',
+                            900: '#0c2a4a',
+                            amber: '#f59e0b',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Ajuste fino para impressão/pdf */
+        @media print {
+            .no-print { display: none !important; }
+            body { background-color: #ffffff !important; color: #000000 !important; }
+        }
+    </style>
+</head>
+<body class="font-sans antialiased min-h-full flex flex-col justify-between bg-slate-900 text-slate-100 pb-12">
+
+    <!-- CABEÇALHO -->
+    <header class="bg-slate-800 border-b border-slate-700/80 sticky top-0 z-50 shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="p-2.5 bg-amber-500/20 text-amber-500 rounded-xl border border-amber-500/30">
+                    <i class="fa-solid fa-truck-fast text-xl"></i>
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <h1 class="text-lg font-bold text-white tracking-tight">CalculaFrete</h1>
+                        <span class="bg-amber-500/10 text-amber-400 text-xs font-semibold px-2 py-0.5 rounded-full border border-amber-500/20">v1.0</span>
+                    </div>
+                    <p class="text-xs text-slate-400">Custo Operacional por KM & Simulador de Lucro</p>
+                </div>
+            </div>
+            <div class="hidden sm:flex items-center space-x-3">
+                <button onclick="exportToPDF()" class="inline-flex items-center px-3 py-1.5 border border-slate-600 rounded-lg text-xs font-medium text-slate-200 bg-slate-700 hover:bg-slate-600 transition">
+                    <i class="fa-solid fa-file-pdf mr-2 text-red-400"></i> Salvar PDF
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- CONTEÚDO PRINCIPAL -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 flex-grow w-full">
+
+        <!-- ANÚNCIO TOP (SIMULAÇÃO AD SENSE) -->
+        <div class="mb-6 bg-slate-800/60 border border-slate-700/50 rounded-xl p-3 text-center no-print">
+            <div class="flex items-center justify-center space-x-2 text-xs text-slate-400 mb-1">
+                <i class="fa-solid fa-rectangle-ad"></i>
+                <span>PUBLICIDADE</span>
+            </div>
+            <div class="h-16 bg-slate-700/40 rounded flex items-center justify-center border border-dashed border-slate-600/50">
+                <span class="text-sm text-slate-400 font-medium"><i class="fa-solid fa-gas-pump mr-2 text-amber-400"></i> Desconto de até R$ 0,35/L no Cartão de Combustível da Frota</span>
+            </div>
+        </div>
+
+        <div id="report-content" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- COLUNA ESQUERDA: FORMULÁRIO DE ENTRADA -->
+            <section class="lg:col-span-5 bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+                <div>
+                    <div class="flex items-center justify-between pb-4 mb-4 border-b border-slate-700">
+                        <h2 class="text-base font-semibold text-white flex items-center">
+                            <i class="fa-solid fa-sliders text-amber-500 mr-2"></i> Parâmetros da Viagem & Carga
+                        </h2>
+                        <span class="text-xs text-slate-400">Campos obrigatórios</span>
+                    </div>
+
+                    <form id="calculator-form" onsubmit="event.preventDefault();" class="space-y-4">
+                        
+                        <!-- Distância -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Distância Total da Viagem (Ida e Volta)</label>
+                            <div class="relative rounded-lg shadow-sm">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                                    <i class="fa-solid fa-route"></i>
+                                </div>
+                                <input type="number" id="distance" min="1" value="850" class="block w-full pl-10 pr-12 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" placeholder="Ex: 500" oninput="calculateCosts()">
+                                <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400 text-xs">km</div>
+                            </div>
+                        </div>
+
+                        <!-- Grid Combustível -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Preço do Litro (R$)</label>
+                                <div class="relative rounded-lg shadow-sm">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">R$</div>
+                                    <input type="number" step="0.01" id="fuelPrice" value="5.89" class="block w-full pl-9 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" placeholder="0.00" oninput="calculateCosts()">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Consumo (km/l)</label>
+                                <div class="relative rounded-lg shadow-sm">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                                        <i class="fa-solid fa-gauge"></i>
+                                    </div>
+                                    <input type="number" step="0.1" id="fuelConsumption" value="2.8" class="block w-full pl-9 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" placeholder="Ex: 2.5" oninput="calculateCosts()">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Pedágio -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Valor Total de Pedágios (R$)</label>
+                            <div class="relative rounded-lg shadow-sm">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                                    <i class="fa-solid fa-road"></i>
+                                </div>
+                                <input type="number" step="0.01" id="tolls" value="240.00" class="block w-full pl-10 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" placeholder="0.00" oninput="calculateCosts()">
+                            </div>
+                        </div>
+
+                        <!-- SEÇÃO TRIBUTOS E SEGURO DA CARGA -->
+                        <div class="pt-3 border-t border-slate-700/80 space-y-3">
+                            <span class="text-xs font-bold text-amber-400 uppercase tracking-wider block">Tributação & Seguro de Carga</span>
+
+                            <!-- Regime Tributário -->
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Regime Tributário do Transportador</label>
+                                <div class="relative rounded-lg shadow-sm">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                                        <i class="fa-solid fa-building-columns"></i>
+                                    </div>
+                                    <select id="taxRegime" onchange="toggleTaxRateInput(); calculateCosts();" class="block w-full pl-10 pr-8 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition appearance-none cursor-pointer">
+                                        <option value="simples">Simples Nacional</option>
+                                        <option value="presumido">Lucro Presumido / Real (Impostos sobre Frete)</option>
+                                        <option value="mei">MEI / Autônomo / Isento (0%)</option>
+                                    </select>
+                                    <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400 text-xs">
+                                        <i class="fa-solid fa-chevron-down"></i>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Alíquota de Impostos -->
+                            <div id="taxRateContainer">
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Alíquota de Impostos sobre o Frete Bruto (%)</label>
+                                <div class="relative rounded-lg shadow-sm">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                                        <i class="fa-solid fa-percent"></i>
+                                    </div>
+                                    <input type="number" step="0.01" id="taxRate" value="6.0" class="block w-full pl-10 pr-12 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" placeholder="Ex: 6.0" oninput="calculateCosts()">
+                                    <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400 text-xs">%</div>
+                                </div>
+                            </div>
+
+                            <!-- Valor da Carga -->
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Valor da Carga (R$)</label>
+                                <div class="relative rounded-lg shadow-sm">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">R$</div>
+                                    <input type="number" step="0.01" id="cargoValue" value="150000.00" class="block w-full pl-9 pr-8 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" placeholder="0.00" oninput="calculateCosts()">
+                                </div>
+                            </div>
+
+                            <!-- Tipo de Carga -->
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Tipo de Carga</label>
+                                <div class="relative rounded-lg shadow-sm">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><i class="fa-solid fa-boxes-stacked"></i></div>
+                                    <select id="cargoType" onchange="renderInsuranceFields(); calculateCosts();" class="block w-full pl-9 pr-8 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition appearance-none cursor-pointer">
+                                        <option value="">Selecione o tipo de carga...</option>
+                                        <option value="geral">Carga Geral (fracionada / paletizada)</option>
+                                        <option value="granel_solido">Granel Sólido (grãos, minérios)</option>
+                                        <option value="granel_liquido">Granel Líquido (não perigoso)</option>
+                                        <option value="frigorificada">Frigorificada / Refrigerada</option>
+                                        <option value="perigosa">Produtos Perigosos (combustíveis, químicos)</option>
+                                        <option value="viva">Carga Viva (animais)</option>
+                                        <option value="veiculos">Veículos (cegonha)</option>
+                                        <option value="alto_valor">Alto Valor (eletrônicos, medicamentos)</option>
+                                        <option value="internacional">Internacional (Mercosul)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Seguros obrigatórios (dinâmico) -->
+                            <div id="insuranceContainer" class="hidden space-y-3 p-3 bg-slate-900/60 border border-slate-700 rounded-lg">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[11px] font-bold text-amber-400 uppercase tracking-wider"><i class="fa-solid fa-shield-halved mr-1"></i> Seguros Obrigatórios</span>
+                                    <span class="text-[10px] text-slate-500">Valores por Alíquota (%) ou Fixo (R$)</span>
+                                </div>
+                                <div id="mandatoryInsuranceFields" class="grid grid-cols-2 gap-3"></div>
+                                <p id="insuranceNote" class="text-[10px] text-slate-500 leading-snug"></p>
+
+                                <div class="pt-2 border-t border-slate-700/80">
+                                    <label class="block text-xs font-medium text-slate-300 mb-1">Seguros Diversos (%) <span class="text-slate-500">— opcional</span></label>
+                                    <div class="relative rounded-lg shadow-sm">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><i class="fa-solid fa-umbrella"></i></div>
+                                        <input type="number" step="0.01" min="0" id="otherInsuranceRate" value="0" class="block w-full pl-9 pr-8 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" placeholder="Ex: 0.05" oninput="calculateCosts()">
+                                        <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400 text-xs">%</div>
+                                    </div>
+                                    <p class="text-[10px] text-slate-500 mt-1">Ex.: seguro de avarias, roubo complementar, lucros cessantes, etc.</p>
+                                </div>
+                                <div class="flex justify-between text-xs pt-2 border-t border-slate-700/80">
+                                    <span class="text-slate-400">Total de seguros na viagem</span>
+                                    <span id="insuranceTotalLabel" class="font-bold text-amber-400 font-mono">R$ 0,00</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SEÇÃO DO MOTORISTA APRIMORADA -->
+                        <div class="pt-3 border-t border-slate-700/80 space-y-3">
+                            <span class="text-xs font-bold text-amber-400 uppercase tracking-wider block">Mão de Obra / Motorista</span>
+
+                            <!-- Modalidade de Contratação -->
+                            <div>
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Vínculo / Modalidade de Contratação</label>
+                                <div class="relative rounded-lg shadow-sm">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                                        <i class="fa-solid fa-id-card"></i>
+                                    </div>
+                                    <select id="driverType" onchange="toggleDriverFields(); calculateCosts();" class="block w-full pl-10 pr-8 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition appearance-none cursor-pointer">
+                                        <option value="clt" selected>CLT (Funcionário Registrado)</option>
+                                        <option value="diarista">Diarista (Valor Fixo por Dia)</option>
+                                        <option value="comissao">Comissionado (% do Frete Bruto)</option>
+                                        <option value="proprietario">Motorista Proprietário / Autônomo (Custo R$ 0 na folha)</option>
+                                    </select>
+                                    <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400 text-xs">
+                                        <i class="fa-solid fa-chevron-down"></i>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- CAMPOS DINÂMICOS CONFORME O VÍNCULO -->
+
+                            <!-- 1. CAMPO DIARISTA -->
+                            <div id="driverDiaristaContainer" class="hidden space-y-3">
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-300 mb-1">Valor da Diária (R$)</label>
+                                        <div class="relative rounded-lg shadow-sm">
+                                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">R$</div>
+                                            <input type="number" step="0.01" id="dailyRate" value="250.00" class="block w-full pl-9 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" placeholder="0.00" oninput="calculateCosts()">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-300 mb-1">Dias de Viagem</label>
+                                        <div class="relative rounded-lg shadow-sm">
+                                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><i class="fa-solid fa-calendar-days"></i></div>
+                                            <input type="number" id="diaristaDays" value="3" class="block w-full pl-9 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" placeholder="1" oninput="calculateCosts()">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 2. CAMPO COMISSIONADO -->
+                            <div id="driverComissaoContainer" class="hidden">
+                                <label class="block text-xs font-medium text-slate-300 mb-1">Comissão sobre o Frete Bruto (%)</label>
+                                <div class="relative rounded-lg shadow-sm">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><i class="fa-solid fa-percent"></i></div>
+                                    <input type="number" step="0.1" id="commissionRate" value="12.0" class="block w-full pl-9 pr-8 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" placeholder="Ex: 10.0" oninput="calculateCosts()">
+                                    <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400 text-xs">%</div>
+                                </div>
+                            </div>
+
+                            <!-- 3. DETALHAMENTO COMPLETO CLT -->
+                            <div id="driverCltContainer" class="space-y-3">
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-300 mb-1">Salário Base Mensal (R$)</label>
+                                        <div class="relative rounded-lg shadow-sm">
+                                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">R$</div>
+                                            <input type="number" step="0.01" id="cltBaseSalary" value="2800.00" class="block w-full pl-9 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" placeholder="0.00" oninput="calculateCosts()">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-300 mb-1">Dias de Viagem</label>
+                                        <div class="relative rounded-lg shadow-sm">
+                                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><i class="fa-solid fa-calendar-days"></i></div>
+                                            <input type="number" id="cltDays" value="3" class="block w-full pl-9 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" placeholder="1" oninput="calculateCosts()">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-300 mb-1">Benefícios Diários / Refeição e Pernoite (R$/dia)</label>
+                                    <div class="relative rounded-lg shadow-sm">
+                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">R$</div>
+                                        <input type="number" step="0.01" id="cltPerDiem" value="95.00" class="block w-full pl-9 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" placeholder="0.00" oninput="calculateCosts()">
+                                    </div>
+                                </div>
+
+                                <!-- PAINEL NÃO EDITÁVEL COM DETALHAMENTO DE ENCARGOS E PROVISÕES -->
+                                <div class="bg-slate-900/90 border border-slate-700/80 rounded-xl p-3 space-y-2">
+                                    <div class="flex items-center justify-between border-b border-slate-700/60 pb-2">
+                                        <span class="text-[11px] font-bold text-amber-400 uppercase tracking-wider"><i class="fa-solid fa-calculator mr-1"></i> Encargos e Provisões CLT (~73.1%)</span>
+                                        <span class="text-[10px] bg-amber-500/10 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/20">Cálculo Automático</span>
+                                    </div>
+                                    
+                                    <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-slate-300">
+                                        <div class="flex justify-between">
+                                            <span class="text-slate-400">• FGTS (8%):</span>
+                                            <span id="cltFgts" class="font-mono text-slate-200">R$ 0,00</span>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <span class="text-slate-400">• 13º Salário (8,33%):</span>
+                                            <span id="clt13th" class="font-mono text-slate-200">R$ 0,00</span>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <span class="text-slate-400">• Férias + 1/3 (11,11%):</span>
+                                            <span id="cltVacation" class="font-mono text-slate-200">R$ 0,00</span>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <span class="text-slate-400">• Multa FGTS (3,2%):</span>
+                                            <span id="cltFine" class="font-mono text-slate-200">R$ 0,00</span>
+                                        </div>
+                                        <div class="flex justify-between col-span-2 border-t border-slate-800 pt-1">
+                                            <span class="text-slate-400">• SEST/SENAT + INSS Patronal (42.5%):</span>
+                                            <span id="cltInssPatronal" class="font-mono text-slate-200">R$ 0,00</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="pt-2 border-t border-slate-700/60 flex justify-between items-center text-xs">
+                                        <span class="text-slate-300 font-semibold">Custo Real por Dia de Viagem:</span>
+                                        <span id="cltDailyCost" class="font-bold text-amber-400 font-mono text-sm">R$ 0,00/dia</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Outros Custos -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Outras Despesas Variáveis (Arla 32, Manutenção, Pneus)</label>
+                            <div class="relative rounded-lg shadow-sm">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                                    <i class="fa-solid fa-wrench"></i>
+                                </div>
+                                <input type="number" step="0.01" id="otherCosts" value="320.00" class="block w-full pl-10 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" placeholder="0.00" oninput="calculateCosts()">
+                            </div>
+                        </div>
+
+                    </form>
+                </div>
+
+                <div class="pt-4 border-t border-slate-700 mt-4">
+                    <button onclick="resetForm()" class="w-full py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-xs font-semibold transition flex items-center justify-center">
+                        <i class="fa-solid fa-rotate-left mr-2"></i> Limpar e Resetar Valores
+                    </button>
+                </div>
+            </section>
+
+            <!-- COLUNA DIREITA: RESULTADOS & SIMULAÇÃO -->
+            <section class="lg:col-span-7 space-y-6">
+
+                <!-- CARDS DESTACADOS -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    
+                    <!-- Custo Total -->
+                    <div class="bg-slate-800 border border-slate-700/80 p-4 rounded-2xl shadow-sm relative overflow-hidden">
+                        <div class="absolute -right-2 -bottom-2 text-slate-700/30 text-5xl">
+                            <i class="fa-solid fa-calculator"></i>
+                        </div>
+                        <p class="text-xs font-medium text-slate-400">Custo Total Operacional & Fiscal</p>
+                        <p id="totalCost" class="text-2xl font-extrabold text-white mt-1">R$ 0,00</p>
+                        <p class="text-[10px] text-slate-500 mt-1">Inclui tributos e seguro de carga</p>
+                    </div>
+
+                    <!-- Custo por KM -->
+                    <div class="bg-slate-800 border border-amber-500/40 p-4 rounded-2xl shadow-sm relative overflow-hidden bg-gradient-to-br from-slate-800 to-amber-950/20">
+                        <div class="absolute -right-2 -bottom-2 text-amber-500/10 text-5xl">
+                            <i class="fa-solid fa-road"></i>
+                        </div>
+                        <p class="text-xs font-medium text-amber-400">Custo Mínimo / KM</p>
+                        <p id="costPerKm" class="text-2xl font-extrabold text-amber-400 mt-1">R$ 0,00</p>
+                        <p class="text-[10px] text-amber-500/80 mt-1">Sua base para negociar</p>
+                    </div>
+
+                    <!-- Consumo Estimado -->
+                    <div class="bg-slate-800 border border-slate-700/80 p-4 rounded-2xl shadow-sm relative overflow-hidden">
+                        <div class="absolute -right-2 -bottom-2 text-slate-700/30 text-5xl">
+                            <i class="fa-solid fa-gas-pump"></i>
+                        </div>
+                        <p class="text-xs font-medium text-slate-400">Diesel Estimado</p>
+                        <p id="estimatedFuel" class="text-2xl font-extrabold text-white mt-1">0 L</p>
+                        <p id="fuelTotalCost" class="text-[10px] text-slate-400 mt-1">Gasto: R$ 0,00</p>
+                    </div>
+
+                </div>
+
+                <!-- GRÁFICO E COMPOSIÇÃO DE CUSTOS -->
+                <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg">
+                    <h3 class="text-sm font-semibold text-white mb-3 flex items-center">
+                        <i class="fa-solid fa-chart-pie text-amber-500 mr-2"></i> Distribuição Detalhada de Custos
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                        <div class="md:col-span-5 flex justify-center h-48">
+                            <canvas id="costChart"></canvas>
+                        </div>
+                        <div class="md:col-span-7 space-y-1.5">
+                            <div class="flex items-center justify-between text-xs p-2 rounded bg-slate-900/60 border border-slate-700/50">
+                                <span class="flex items-center"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 mr-2"></span> Combustível</span>
+                                <span id="barFuelPct" class="font-bold text-white">0%</span>
+                            </div>
+                            <div class="flex items-center justify-between text-xs p-2 rounded bg-slate-900/60 border border-slate-700/50">
+                                <span class="flex items-center"><span class="w-2.5 h-2.5 rounded-full bg-red-500 mr-2"></span> Impostos Fiscais</span>
+                                <span id="barTaxPct" class="font-bold text-white">0%</span>
+                            </div>
+                            <div class="flex items-center justify-between text-xs p-2 rounded bg-slate-900/60 border border-slate-700/50">
+                                <span class="flex items-center"><span class="w-2.5 h-2.5 rounded-full bg-cyan-500 mr-2"></span> Seguros</span>
+                                <span id="barInsurancePct" class="font-bold text-white">0%</span>
+                            </div>
+                            <div class="flex items-center justify-between text-xs p-2 rounded bg-slate-900/60 border border-slate-700/50">
+                                <span class="flex items-center"><span class="w-2.5 h-2.5 rounded-full bg-blue-500 mr-2"></span> Pedágios</span>
+                                <span id="barTollPct" class="font-bold text-white">0%</span>
+                            </div>
+                            <div class="flex items-center justify-between text-xs p-2 rounded bg-slate-900/60 border border-slate-700/50">
+                                <span class="flex items-center"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 mr-2"></span> Motorista</span>
+                                <span id="barDriverPct" class="font-bold text-white">0%</span>
+                            </div>
+                            <div class="flex items-center justify-between text-xs p-2 rounded bg-slate-900/60 border border-slate-700/50">
+                                <span class="flex items-center"><span class="w-2.5 h-2.5 rounded-full bg-purple-500 mr-2"></span> Outras Despesas</span>
+                                <span id="barOtherPct" class="font-bold text-white">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SIMULADOR DE FRETE LUCRATIVO -->
+                <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-lg">
+                    <div class="flex items-center justify-between border-b border-slate-700 pb-3 mb-4">
+                        <h3 class="text-sm font-semibold text-white flex items-center">
+                            <i class="fa-solid fa-hand-holding-dollar text-emerald-400 mr-2"></i> Simulador de Frete Oferta vs Margem
+                        </h3>
+                        <span class="text-xs text-slate-400">Validação de Proposta</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Valor do Frete Oferecido (R$)</label>
+                            <div class="relative rounded-lg shadow-sm">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">R$</div>
+                                <input type="number" step="0.01" id="freightOffered" value="3500.00" class="block w-full pl-9 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition" placeholder="0.00" oninput="calculateCosts()">
+                            </div>
+                        </div>
+
+                        <!-- Status Badge -->
+                        <div id="statusCard" class="p-3 rounded-lg border transition-all flex items-center justify-between bg-slate-900 border-slate-700">
+                            <div>
+                                <p class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Resultado</p>
+                                <p id="statusTitle" class="text-xs font-bold text-slate-200">Informe a proposta</p>
+                            </div>
+                            <div id="statusIcon" class="text-xl">
+                                <i class="fa-solid fa-circle-info text-slate-500"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RESUMO DE MARGEM -->
+                    <div class="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-slate-700/60">
+                        <div class="bg-slate-900/80 p-3 rounded-xl">
+                            <span class="text-xs text-slate-400 block">Lucro Líquido Estimado</span>
+                            <span id="netProfit" class="text-lg font-bold text-white">R$ 0,00</span>
+                        </div>
+                        <div class="bg-slate-900/80 p-3 rounded-xl">
+                            <span class="text-xs text-slate-400 block">Margem de Lucro (%)</span>
+                            <span id="profitMargin" class="text-lg font-bold text-white">0,0%</span>
+                        </div>
+                    </div>
+
+                </div>
+
+            </section>
+
+        </div>
+
+        <!-- SEGUNDO BLOCO DE BANNER AD SENSE -->
+        <div class="mt-8 bg-slate-800/60 border border-slate-700/50 rounded-xl p-3 text-center no-print">
+            <div class="flex items-center justify-center space-x-2 text-xs text-slate-400 mb-1">
+                <i class="fa-solid fa-rectangle-ad"></i>
+                <span>ANÚNCIO PATROCINADO</span>
+            </div>
+            <div class="h-16 bg-slate-700/40 rounded flex items-center justify-center border border-dashed border-slate-600/50">
+                <span class="text-sm text-slate-400 font-medium"><i class="fa-solid fa-shield-halved mr-2 text-emerald-400"></i> Proteção Veicular para Caminhões e Carretas - Cotação Online Grátis</span>
+            </div>
+        </div>
+	<!-- BLOCO DE CONTEÚDO SEO (ESSENCIAL PARA O GOOGLE ADSENSE) -->
+<section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12 pt-8 border-t border-slate-800 text-slate-300 space-y-6">
+    <div class="max-w-4xl">
+        <h2 class="text-xl font-bold text-white mb-3">Como Calcular o Custo Real por Quilómetro Rodado no Transporte de Cargas?</h2>
+        <p class="text-sm leading-relaxed text-slate-400 mb-4">
+            A gestão precisa dos custos operacionais é o pilar fundamental para a rentabilidade de transportadores autónomos, empresas de transporte rodoviário de cargas (ETC) e gestores de frota. O cálculo de frete moderno vai muito além do simples gasto com combustível e pedágio: envolve custos fiscais, mão de obra com encargos trabalhistas e coberturas de seguro obrigatórias conforme a legislação vigente.
+        </p>
+
+        <h3 class="text-base font-semibold text-amber-400 mt-6 mb-2">1. Custos Variáveis: Combustível, Pneus e Manutenção</h3>
+        <p class="text-sm leading-relaxed text-slate-400 mb-4">
+            Os custos variáveis flutuam diretamente com a distância percorrida em km. Para calcular o custo de combustível, divide-se a distância total pelo consumo médio do veículo km/l e multiplica-se pelo preço do litro de diesel. Adicionalmente, devem ser considerados o consumo de Arla 32, a depreciação do jogo de pneus e a reserva para manutenção preventiva.
+        </p>
+
+        <h3 class="text-base font-semibold text-amber-400 mt-6 mb-2">2. Mão de Obra e Encargos Trabalhistas (CLT vs Autônomo)</h3>
+        <p class="text-sm leading-relaxed text-slate-400 mb-4">
+            Quando a operação utiliza motoristas contratados sob o regime CLT, o custo do funcionário não se limita ao salário base. Deve-se contabilizar a provisão diária de FGTS (8%), 13º Salário (8,33%), Férias com 1/3 constitucional (11,11%), multa rescisória do FGTS (3,2%), além das alíquotas patronais de INSS, RAT e contribuição ao SEST/SENAT (aproximadamente 42,5%). A soma destes encargos resulta numa taxa aproximada de 73,1% sobre o salário base.
+        </p>
+
+        <h3 class="text-base font-semibold text-amber-400 mt-6 mb-2">3. Seguros Obrigatórios de Carga (Lei 14.599/2023)</h3>
+        <p class="text-sm leading-relaxed text-slate-400">
+            De acordo com a atualização da Lei do Motorista e do Transporte Rodoviário de Cargas, os seguros essenciais para a operação incluem:
+        </p>
+        <ul class="list-disc pl-5 text-sm text-slate-400 space-y-1 my-3">
+            <li><strong>RCTR-C:</strong> Responsabilidade Civil do Transportador Rodoviário de Carga (cobertura para acidentes, colisão, tombamento e incêndio).</li>
+            <li><strong>RC-DC:</strong> Responsabilidade Civil por Desaparecimento de Carga (cobertura para roubo, furto qualificado e estelionato em trânsito).</li>
+            <li><strong>RC-V:</strong> Responsabilidade Civil do Veículo para cobertura de danos materiais e corporais causados a terceiros.</li>
+        </ul>
+    </div>
+</section>
+    </main>
+
+    <!-- RODAPÉ -->
+    <footer class="mt-12 bg-slate-800/80 border-t border-slate-700/80 py-6 text-center text-xs text-slate-400 no-print">
+        <div class="max-w-7xl mx-auto px-4 space-y-2">
+            <p>© 2026 CalculaFrete - Ferramentas para o Setor de Transporte e Logística.</p>
+            <p class="text-slate-500">Nota: Os valores calculados são estimativas baseadas nos parâmetros inseridos e servem como apoio de gestão.</p>
+            <a href="politica-e-termos.html">Política de Privacidade & Termos</a>        
+        </div>
+    </footer>
+
+    <!-- LÓGICA JAVASCRIPT EMBUTIDA -->
+    <script>
+        let costChart = null;
+
+        window.onload = function() {
+            toggleTaxRateInput();
+            toggleDriverFields();
+            initChart();
+            calculateCosts();
+        };
+
+        function toggleDriverFields() {
+            const driverType = document.getElementById('driverType').value;
+            const cltContainer = document.getElementById('driverCltContainer');
+            const diaristaContainer = document.getElementById('driverDiaristaContainer');
+            const comissaoContainer = document.getElementById('driverComissaoContainer');
+
+            cltContainer.classList.add('hidden');
+            diaristaContainer.classList.add('hidden');
+            comissaoContainer.classList.add('hidden');
+
+            if (driverType === 'clt') {
+                cltContainer.classList.remove('hidden');
+            } else if (driverType === 'diarista') {
+                diaristaContainer.classList.remove('hidden');
+            } else if (driverType === 'comissao') {
+                comissaoContainer.classList.remove('hidden');
+            }
+        }
+
+        function toggleTaxRateInput() {
+            const regime = document.getElementById('taxRegime').value;
+            const container = document.getElementById('taxRateContainer');
+            const taxInput = document.getElementById('taxRate');
+
+            if (regime === 'mei') {
+                container.style.display = 'none';
+                taxInput.value = '0';
+            } else {
+                container.style.display = 'block';
+                if (regime === 'simples' && (taxInput.value === '0' || taxInput.value === '11.25')) {
+                    taxInput.value = '6.0';
+                } else if (regime === 'presumido' && (taxInput.value === '0' || taxInput.value === '6.0')) {
+                    taxInput.value = '11.25';
+                }
+            }
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('costChart').getContext('2d');
+            costChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Combustível', 'Impostos Fiscais', 'Seguros', 'Pedágios', 'Motorista', 'Outros'],
+                    datasets: [{
+                        data: [0, 0, 0, 0, 0, 0],
+                        backgroundColor: ['#f59e0b', '#ef4444', '#06b6d4', '#3b82f6', '#10b981', '#a855f7'],
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return ' ' + context.label + ': R$ ' + context.raw.toFixed(2);
+                                }
+                            }
+                        }
+                    },
+                    cutout: '68%'
+                }
+            });
+        }
+
+        // Seguros obrigatórios por tipo de carga
+        const INSURANCE_CATALOG = {
+            rctrc: { name: 'RCTR-C', desc: 'Resp. Civil do Transportador (acidentes)', rate: 0.05 },
+            rcdc:  { name: 'RC-DC', desc: 'Desaparecimento de Carga (roubo/furto)', rate: 0.15 },
+            rcv:   { name: 'RC-V', desc: 'Resp. Civil do Veículo (danos a terceiros)', rate: 0.03, isFlex: true },
+            amb:   { name: 'RC Ambiental', desc: 'Danos ambientais (produtos perigosos)', rate: 0.08 },
+            rctrvi:{ name: 'RCTR-VI', desc: 'Resp. Civil em Viagem Internacional', rate: 0.07 },
+            carta: { name: 'Carta Azul', desc: 'RC danos a terceiros não transportados (Mercosul)', rate: 0.02 },
+        };
+        const CARGO_INSURANCE = {
+            geral:          { items: ['rctrc','rcdc','rcv'] },
+            granel_solido:  { items: ['rctrc','rcdc','rcv'] },
+            granel_liquido: { items: ['rctrc','rcdc','rcv'] },
+            frigorificada:  { items: ['rctrc','rcdc','rcv'], note: 'Recomendado contratar também cobertura de avaria por falha de refrigeração em Seguros Diversos.' },
+            perigosa:       { items: ['rctrc','rcdc','rcv','amb'], note: 'Produtos perigosos exigem também cobertura de danos ambientais (Res. ANTT 5.998/2022).' },
+            viva:           { items: ['rctrc','rcdc','rcv'], note: 'Mortalidade de animais costuma exigir apólice específica (use Seguros Diversos).' },
+            veiculos:       { items: ['rctrc','rcdc','rcv'] },
+            alto_valor:     { items: ['rctrc','rcdc','rcv'], rates: { rcdc: 0.30 }, note: 'Cargas de alto valor normalmente exigem PGR (gerenciamento de risco) e escolta.' },
+            internacional:  { items: ['rctrvi','carta','rcdc'], note: 'No Mercosul o RCTR-VI e a Carta Azul substituem o RCTR-C no trecho internacional.' },
+        };
+        const BASE_NOTE = 'Lei 11.442/2007 (alterada pela Lei 14.599/2023): RCTR-C, RC-DC e RC-V são obrigatórios ao transportador. Taxas sugeridas — informe as da sua apólice.';
+
+        function renderInsuranceFields() {
+            const type = document.getElementById('cargoType').value;
+            const container = document.getElementById('insuranceContainer');
+            const fields = document.getElementById('mandatoryInsuranceFields');
+            if (!type) { container.classList.add('hidden'); fields.innerHTML = ''; return; }
+            const cfg = CARGO_INSURANCE[type];
+            fields.innerHTML = cfg.items.map(k => {
+                const ins = INSURANCE_CATALOG[k];
+                const rate = (cfg.rates && cfg.rates[k] !== undefined) ? cfg.rates[k] : ins.rate;
+                
+                if (ins.isFlex) {
+                    return `<div>
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="block text-xs font-medium text-slate-300" title="${ins.desc}">${ins.name}</label>
+                            <select id="unit_${k}" onchange="toggleInsuranceUnit('${k}'); calculateCosts();" class="bg-slate-800 border border-slate-700 rounded px-1 text-[10px] text-amber-400 focus:outline-none cursor-pointer">
+                                <option value="pct">% Carga</option>
+                                <option value="fixed">R$ Fixo</option>
+                            </select>
+                        </div>
+                        <div class="relative rounded-lg shadow-sm">
+                            <input type="number" step="0.01" min="0" id="input_${k}" data-insurance-flex="${k}" value="${rate}" class="block w-full pl-3 pr-8 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" oninput="calculateCosts()">
+                            <div id="symbol_${k}" class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400 text-xs">%</div>
+                        </div>
+                        <p class="text-[10px] text-slate-500 mt-1 leading-tight">${ins.desc}</p>
+                    </div>`;
+                }
+
+                return `<div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1" title="${ins.desc}">${ins.name} (%)</label>
+                    <div class="relative rounded-lg shadow-sm">
+                        <input type="number" step="0.01" min="0" data-insurance="${k}" value="${rate}" class="block w-full pl-3 pr-8 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition" oninput="calculateCosts()">
+                        <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400 text-xs">%</div>
+                    </div>
+                    <p class="text-[10px] text-slate-500 mt-1 leading-tight">${ins.desc}</p>
+                </div>`;
+            }).join('');
+            document.getElementById('insuranceNote').innerText = BASE_NOTE + (cfg.note ? ' ' + cfg.note : '');
+            container.classList.remove('hidden');
+        }
+
+        function toggleInsuranceUnit(key) {
+            const unit = document.getElementById(`unit_${key}`).value;
+            const symbol = document.getElementById(`symbol_${key}`);
+            const input = document.getElementById(`input_${key}`);
+            
+            if (unit === 'fixed') {
+                symbol.innerText = 'R$';
+                if (input.value === '0.03' || input.value === '0.05') input.value = '150.00';
+            } else {
+                symbol.innerText = '%';
+                if (input.value === '150' || input.value === '150.00') input.value = '0.03';
+            }
+        }
+
+        function calculateTotalInsuranceCost(cargoValue) {
+            if (!document.getElementById('cargoType').value) return 0;
+            let totalCost = 0;
+
+            // Alíquotas normais (%)
+            document.querySelectorAll('[data-insurance]').forEach(el => {
+                const rate = parseFloat(el.value) || 0;
+                totalCost += (cargoValue * rate) / 100;
+            });
+
+            // Campos Flexíveis (RC-V)
+            document.querySelectorAll('[data-insurance-flex]').forEach(el => {
+                const key = el.getAttribute('data-insurance-flex');
+                const val = parseFloat(el.value) || 0;
+                const unit = document.getElementById(`unit_${key}`) ? document.getElementById(`unit_${key}`).value : 'pct';
+                
+                if (unit === 'fixed') {
+                    totalCost += val;
+                } else {
+                    totalCost += (cargoValue * val) / 100;
+                }
+            });
+
+            // Seguros Diversos
+            const otherRate = parseFloat(document.getElementById('otherInsuranceRate').value) || 0;
+            totalCost += (cargoValue * otherRate) / 100;
+
+            return totalCost;
+        }
+
+        function calculateCosts() {
+            // Obter valores numéricos das entradas
+            const distance = parseFloat(document.getElementById('distance').value) || 0;
+            const fuelPrice = parseFloat(document.getElementById('fuelPrice').value) || 0;
+            const fuelConsumption = parseFloat(document.getElementById('fuelConsumption').value) || 0;
+            const tolls = parseFloat(document.getElementById('tolls').value) || 0;
+            const otherCosts = parseFloat(document.getElementById('otherCosts').value) || 0;
+            const freightOffered = parseFloat(document.getElementById('freightOffered').value) || 0;
+
+            // Parâmetros Tributários e de Seguro
+            const taxRegime = document.getElementById('taxRegime').value;
+            const taxRate = taxRegime === 'mei' ? 0 : (parseFloat(document.getElementById('taxRate').value) || 0);
+            const cargoValue = parseFloat(document.getElementById('cargoValue').value) || 0;
+
+            // 1. Cálculos de Combustível
+            let fuelLiters = 0;
+            let totalFuelCost = 0;
+            if (distance > 0 && fuelConsumption > 0) {
+                fuelLiters = distance / fuelConsumption;
+                totalFuelCost = fuelLiters * fuelPrice;
+            }
+
+            // 2. Cálculos do Motorista segundo Modalidade
+            const driverType = document.getElementById('driverType').value;
+            let driverTotalCost = 0;
+
+            if (driverType === 'clt') {
+                const baseSalary = parseFloat(document.getElementById('cltBaseSalary').value) || 0;
+                const days = parseFloat(document.getElementById('cltDays').value) || 1;
+                const perDiem = parseFloat(document.getElementById('cltPerDiem').value) || 0;
+
+                const fgts = baseSalary * 0.08;
+                const thirteenth = baseSalary * (1 / 12);
+                const vacation = baseSalary * (1 / 12) * (4 / 3);
+                const fgtsFine = baseSalary * 0.032;
+                const inssPatronal = baseSalary * 0.425;
+
+                const totalMonthlyCharges = fgts + thirteenth + vacation + fgtsFine + inssPatronal;
+                const monthlyTotalSalaryCost = baseSalary + totalMonthlyCharges;
+
+                const dailyBasePlusCharges = monthlyTotalSalaryCost / 22;
+                const realDailyCost = dailyBasePlusCharges + perDiem;
+                driverTotalCost = realDailyCost * days;
+
+                document.getElementById('cltFgts').innerText = formatCurrency(fgts);
+                document.getElementById('clt13th').innerText = formatCurrency(thirteenth);
+                document.getElementById('cltVacation').innerText = formatCurrency(vacation);
+                document.getElementById('cltFine').innerText = formatCurrency(fgtsFine);
+                document.getElementById('cltInssPatronal').innerText = formatCurrency(inssPatronal);
+                document.getElementById('cltDailyCost').innerText = formatCurrency(realDailyCost) + '/dia';
+
+            } else if (driverType === 'diarista') {
+                const dailyRate = parseFloat(document.getElementById('dailyRate').value) || 0;
+                const days = parseFloat(document.getElementById('diaristaDays').value) || 1;
+                driverTotalCost = dailyRate * days;
+            } else if (driverType === 'comissao') {
+                const commissionRate = parseFloat(document.getElementById('commissionRate').value) || 0;
+                driverTotalCost = (freightOffered * commissionRate) / 100;
+            } else {
+                driverTotalCost = 0;
+            }
+
+            // 3. Cálculos de Seguro de Carga e Impostos Fiscais
+            const insuranceCost = calculateTotalInsuranceCost(cargoValue);
+            const taxCost = (freightOffered * taxRate) / 100;
+            document.getElementById('insuranceTotalLabel').innerText = formatCurrency(insuranceCost);
+
+            // 4. Custo Total Operacional & Fiscal
+            const totalCost = totalFuelCost + tolls + driverTotalCost + otherCosts + insuranceCost + taxCost;
+
+            // 5. Custo por KM
+            const costPerKm = distance > 0 ? (totalCost / distance) : 0;
+
+            // 6. Atualizar os Cards Principais
+            document.getElementById('totalCost').innerText = formatCurrency(totalCost);
+            document.getElementById('costPerKm').innerText = formatCurrency(costPerKm);
+            document.getElementById('estimatedFuel').innerText = fuelLiters.toFixed(1) + ' L';
+            document.getElementById('fuelTotalCost').innerText = 'Gasto: ' + formatCurrency(totalFuelCost);
+
+            // 7. Atualizar Gráfico e Porcentagens
+            if (totalCost > 0) {
+                const fuelPct = (totalFuelCost / totalCost) * 100;
+                const taxPct = (taxCost / totalCost) * 100;
+                const insurancePct = (insuranceCost / totalCost) * 100;
+                const tollPct = (tolls / totalCost) * 100;
+                const driverPct = (driverTotalCost / totalCost) * 100;
+                const otherPct = (otherCosts / totalCost) * 100;
+
+                document.getElementById('barFuelPct').innerText = fuelPct.toFixed(1) + '%';
+                document.getElementById('barTaxPct').innerText = taxPct.toFixed(1) + '%';
+                document.getElementById('barInsurancePct').innerText = insurancePct.toFixed(1) + '%';
+                document.getElementById('barTollPct').innerText = tollPct.toFixed(1) + '%';
+                document.getElementById('barDriverPct').innerText = driverPct.toFixed(1) + '%';
+                document.getElementById('barOtherPct').innerText = otherPct.toFixed(1) + '%';
+
+                if (costChart) {
+                    costChart.data.datasets[0].data = [totalFuelCost, taxCost, insuranceCost, tolls, driverTotalCost, otherCosts];
+                    costChart.update();
+                }
+            }
+
+            // 8. Simulador de Frete & Margem de Lucro Líquida
+            const netProfit = freightOffered - totalCost;
+            const profitMargin = freightOffered > 0 ? (netProfit / freightOffered) * 100 : 0;
+
+            document.getElementById('netProfit').innerText = formatCurrency(netProfit);
+            document.getElementById('profitMargin').innerText = profitMargin.toFixed(1) + '%';
+
+            // Estilização do Status Card
+            const statusCard = document.getElementById('statusCard');
+            const statusTitle = document.getElementById('statusTitle');
+            const statusIcon = document.getElementById('statusIcon');
+
+            if (freightOffered <= 0) {
+                statusCard.className = "p-3 rounded-lg border flex items-center justify-between bg-slate-900 border-slate-700";
+                statusTitle.innerText = "Digite a proposta de frete";
+                statusTitle.className = "text-xs font-bold text-slate-300";
+                statusIcon.innerHTML = '<i class="fa-solid fa-circle-info text-slate-500"></i>';
+            } else if (netProfit < 0) {
+                statusCard.className = "p-3 rounded-lg border flex items-center justify-between bg-red-950/40 border-red-500/50";
+                statusTitle.innerText = "PREJUÍZO! Oferta abaixo do custo fiscal/operacional";
+                statusTitle.className = "text-xs font-bold text-red-400";
+                statusIcon.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-red-500"></i>';
+            } else if (profitMargin < 15) {
+                statusCard.className = "p-3 rounded-lg border flex items-center justify-between bg-amber-950/40 border-amber-500/50";
+                statusTitle.innerText = "Atenção: Margem Baixa (<15%)";
+                statusTitle.className = "text-xs font-bold text-amber-400";
+                statusIcon.innerHTML = '<i class="fa-solid fa-circle-exclamation text-amber-500"></i>';
+            } else {
+                statusCard.className = "p-3 rounded-lg border flex items-center justify-between bg-emerald-950/40 border-emerald-500/50";
+                statusTitle.innerText = "Frete Lucrativo (>=15%)";
+                statusTitle.className = "text-xs font-bold text-emerald-400";
+                statusIcon.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-500"></i>';
+            }
+        }
+
+        function formatCurrency(val) {
+            return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        }
+
+        function resetForm() {
+            document.getElementById('calculator-form').reset();
+            toggleTaxRateInput();
+            toggleDriverFields();
+            calculateCosts();
+        }
+
+        function exportToPDF() {
+            const element = document.getElementById('report-content');
+            const opt = {
+                margin:       [0.5, 0.5, 0.5, 0.5],
+                filename:     'CalculaFrete_Relatorio_KM.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, backgroundColor: '#0f172a' },
+                jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+            };
+
+            html2pdf().set(opt).from(element).save();
+        }
+    </script>
+</body>
+</html>
